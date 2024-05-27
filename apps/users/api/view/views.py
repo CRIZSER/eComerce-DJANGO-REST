@@ -1,10 +1,17 @@
 from rest_framework import status, generics, viewsets #usar los status para los mensajes
-from rest_framework.views import APIView
+#from rest_framework.views import APIView
+from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.authtoken.views import Token
+from rest_framework.authtoken.models import Token as token_model
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
-from apps.users.api.serializers.serializers import UserSerializer, TestUserSerializar
+from rest_framework.views import APIView
+from apps.users.api.serializers.serializers import UserSerializer, UserTokenSerializer
 from apps.users.models import User as user_model
-from django.http import HttpResponse
+from django.contrib.sessions.models import Session
+from datetime import datetime
+#from django.http import HttpResponse
+
 
 # views.py se remplaza por el archivo apy.py
 
@@ -27,6 +34,7 @@ class UserViewSet(viewsets.ModelViewSet):
     
     def create(self, request):
         user_serializer = self.serializer_class(data = request.data)
+        print(user_serializer)
         if user_serializer.is_valid():
             user_serializer.save()
             return Response({'message':'Usuario creado correctamente'}, status=status.HTTP_201_CREATED)
@@ -50,6 +58,88 @@ class UserViewSet(viewsets.ModelViewSet):
             user.save()#lo hacemos de esta manera ya que estamos modificando un solo campo y se deberia usar delete, pero para al ser solo muestra se eliminar logicamente
             return Response({'message':'Usuario eliminado'},status=status.HTTP_200_OK)
         return Response({'message':'Usuario no encontrado'},status=status.HTTP_404_NOT_FOUND)
+
+class Login(ObtainAuthToken):
+
+    def post(self, request, *args, **kwargs):
+        login_serializer = self.serializer_class(data = request.data, context = {request:'request'})#serializer hace referencia a la clase ObtainAuthToken que posee el serializador
+                                                #verificaremos que los datos enviados esten presentes
+        print(login_serializer)
+        if(login_serializer.is_valid()):
+           
+            user = login_serializer.validated_data['user']
+            if(user.is_active):
+                token, created = Token.objects.get_or_create(user=user) # https://www.django-rest-framework.org/api-guide/authentication/#tokenauthentication
+                userTokenSerializer = UserTokenSerializer(user)
+                if created: 
+                    return Response({
+                        'token': token.key,
+                        'email': userTokenSerializer.data['email'],
+                        'username': userTokenSerializer.data['username'],
+                        'message': 'Login exitoso'
+                    }, status=status.HTTP_201_CREATED)
+                else:
+                    self.delete_sesions(user)
+                    token.delete()#eliminamos el token para crearlo nuevamente, esto aplicara cada vez que inicie sesión 
+                    token = Token.objects.create(user=user)
+                    return Response({
+                        'token': token.key,
+                        'email': userTokenSerializer.data['email'],
+                        'username': userTokenSerializer.data['username'],
+                        'message': 'Login exitoso'
+                    }, status=status.HTTP_201_CREATED)
+                
+                    #metodo alternativo
+                    #token.delete()#eliminamos el token para crearlo nuevamente
+                    #Response ({'message':'Sesion ya iniciada'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response ({'message':'Usuario no habilitado'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response ({'message':'Verifique sus credenciales de identificación'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete_sesions(self, user):
+        all_sessions = Session.objects.filter(expire_date__gte = datetime.now())#cerramos todas las sesiones activas
+        if all_sessions.exists():
+            for sesion in all_sessions:#recorremos cada sesion activa
+                sesion_data = sesion.get_decoded()#decodificamos las sesiones activas
+                if user.id == int(sesion_data.get('_auth_user_id')):#todas las sesiones referentes al usuario actual se borran
+                    sesion.delete()
+
+class Logout(APIView):
+
+    def post(self, request, *args, **kwargs):
+        try:
+            token = request.POST.get('token')#obtenemos el token actual del usuario como una variable en una pretición / resquest es un objeto que extiende a httpRequest, lo que nos permite realizar las solicitudes
+            token_exists = Token.objects.filter(key = token).first()#obtebemos la primera conincidencia
+        
+            if token_exists:
+                print(token_exists)
+                self.delete_sesions(token_exists.user)
+                token_exists.delete()#eliminamos el token
+                return Response ({'message':'Sesión cerrada correctamente'}, status=status.HTTP_200_OK)
+            else:
+                return Response ({'message':'No se encontro un usuario con las credenciales proporcionadas'}, status=status.HTTP_404_NOT_FOUND)
+        except:
+            return Response ({'message':'No se encontro el token en la petición'}, status=status.HTTP_409_CONFLICT)
+
+    def delete_sesions(self, user):
+        all_sessions = Session.objects.filter(expire_date__gte = datetime.now())#cerramos todas las sesiones activas
+        if all_sessions.exists():
+            for sesion in all_sessions:#recorremos cada sesion activa
+                sesion_data = sesion.get_decoded()#decodificamos las sesiones activas
+                if user.id == int(sesion_data.get('_auth_user_id')):#todas las sesiones referentes al usuario actual se borran
+                    sesion.delete()
+
+class UserToken(APIView):
+
+    def get(self, request, *args, **kwargs):
+        username = request.GET.get('username')
+        try:
+            user = user_model.objects.filter(username=username).first()
+            token = token_model.objects.filter(user = user).first()
+            return Response({'token':token.key})
+        except:
+            return Response({'message': 'Invalid username'}, status=status.HTTP_400_BAD_REQUEST)
+
+
         
 ########################################################################################################################################################################################## 
 

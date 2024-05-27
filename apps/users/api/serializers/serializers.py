@@ -47,6 +47,12 @@ class UserSerializer(serializers.ModelSerializer): #los serializar convierten un
         instance.save()
         return instance"""
 
+class UserTokenSerializer(serializers.ModelSerializer): #los serializar convierten una estructura en django a json, serializers.ModelSerializer le parasaremos un modelo con los campos ya establecidos
+    class Meta: #generamos el serializer, luego de esto al archivo apy.py
+        model = user_model
+        fields = ('email','username')
+
+
 class TestUserSerializar(serializers.Serializer):#con serializers.Serializer indicamos que nosotros le daremos los campos
     name = serializers.CharField(max_length=200) #con los campos y sus restricciones seran usados en .valid()
     email = serializers.EmailField()

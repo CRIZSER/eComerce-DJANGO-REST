@@ -3,9 +3,9 @@ from rest_framework.response import Response
 from apps.base.api import GeneralListApiView
 from apps.products.api.serializers.product_serializer import ProductSerializer
 from apps.products.models import Products
+from apps.users.authentication_mixin import Authentication
 
-
-class ProductViewSet(viewsets.ModelViewSet): #como utilizar un viewset 08-08-2023
+class ProductViewSet(Authentication, viewsets.ModelViewSet): #como utilizar un viewset 08-08-2023, 20-05-2024 Authentication es importado y usado para que el metodo dispatch sobreecrito verifique la autenticación
     serializer_class = ProductSerializer #Definifmos el serializador y el queryset
     queryset = Products.objects.filter(state = True)
 
